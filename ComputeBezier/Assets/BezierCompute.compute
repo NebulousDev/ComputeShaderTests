@@ -1,0 +1,82 @@
+#pragma kernel CalculateCurveMesh
+
+float3  point0;
+float3  point1;
+float3  point2;
+float3  point3;
+
+int     resolution;
+float   width;
+
+RWStructuredBuffer<float4>  vertices;
+RWStructuredBuffer<int>     indices;
+RWStructuredBuffer<int>     args;
+
+float3 CalcBezierPos(float3 p0, float3 p1, float3 p2, float3 p3, float t)
+{
+    float nt3 = (1 - t) * (1 - t) * (1 - t);
+    float nt2 = (1 - t) * (1 - t);
+    float nt = (1 - t);
+    float t3 = t * t * t;
+    float t2 = t * t;
+
+    float x =
+        nt3 * p0.x +
+        3 * t * nt2 * p1.x +
+        3 * t2 * nt * p2.x +
+        t3 * p3.x;
+
+    float y =
+        nt3 * p0.y +
+        3 * t * nt2 * p1.y +
+        3 * t2 * nt * p2.y +
+        t3 * p3.y;
+
+    float z =
+        nt3 * p0.z +
+        3 * t * nt2 * p1.z +
+        3 * t2 * nt * p2.z +
+        t3 * p3.z;
+
+    return float3(x, y, z);
+}
+
+[numthreads(1,1,1)]
+void CalculateCurveMesh(uint3 id : SV_DispatchThreadID)
+{
+    float3 lastPoint = CalcBezierPos(point0, point1, point2, point3, 0);
+
+    for (int i = 1; i <= resolution; i++)
+    {
+        float t = (float)i / (float)resolution;
+        float3 currentPoint = CalcBezierPos(point0, point1, point2, point3, t);
+
+        float3 normal = currentPoint - lastPoint;
+        float temp = normal.y;
+        normal.y = -normal.x;
+        normal.x = temp;
+
+        float3 minPoint = currentPoint - normalize(normal) * width;
+        float3 maxPoint = currentPoint + normalize(normal) * width;
+
+        vertices[(i - 1) * 2 + 0] = float4(minPoint, 1);
+        vertices[(i - 1) * 2 + 1] = float4(maxPoint, 1);
+
+        int perIdx = (i - 1) * 6;
+        int perPair = (i - 1) * 2;
+
+        indices[perIdx + 0] = perPair + 0;
+        indices[perIdx + 1] = perPair + 1;
+        indices[perIdx + 2] = perPair + 2;
+        indices[perIdx + 3] = perPair + 1;
+        indices[perIdx + 4] = perPair + 2;
+        indices[perIdx + 5] = perPair + 3;
+
+        lastPoint = currentPoint;
+    }
+
+    args[0] = (resolution - 1) * 6;     // Count per instance
+    args[1] = 1;                        // Instance count
+    args[2] = 0;                        // Start vertex
+    args[3] = 0;                        // Start instance
+}
